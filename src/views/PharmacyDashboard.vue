@@ -32,6 +32,7 @@ const loading = ref(false);
 const notice = ref<{ type: 'success' | 'error'; text: string } | null>(null);
 const showAddMedicineModal = ref(false);
 const showEditMedicineModal = ref(false);
+const showEditLabTestDrawer = ref(false);
 const showLogoutConfirm = ref(false);
 
 const medicines = ref<PharmacyItem[]>([]);
@@ -155,7 +156,7 @@ const viewReport = (report: LabReport) => {
   selectedReport.value = report;
   selectedResult.value = report.result || '';
   selectedStatus.value = report.status || 'pending';
-  activeTab.value = 'laboratory';
+  showEditLabTestDrawer.value = true;
 };
 
 const saveLabReport = async () => {
@@ -193,6 +194,7 @@ const saveLabReport = async () => {
 
     showNotice('success', 'Lab report updated successfully');
     selectedReport.value = null;
+    showEditLabTestDrawer.value = false;
   } catch (err) {
     showNotice('error', err instanceof Error ? err.message : 'Failed to update lab report');
   }
@@ -427,43 +429,6 @@ onMounted(loadData);
               </template>
             </Table>
           </Card>
-
-          <Card v-if="selectedReport" title="Update Lab Report" :icon="ClipboardList">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="space-y-2">
-                <label class="text-xs font-bold uppercase text-slate-500">Patient</label>
-                <input :value="selectedReport.patient_name || `Patient #${selectedReport.patient_id}`" disabled class="w-full p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600" />
-              </div>
-              <div class="space-y-2">
-                <label class="text-xs font-bold uppercase text-slate-500">Test</label>
-                <input :value="selectedReport.test_name" disabled class="w-full p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600" />
-              </div>
-              <div class="space-y-2">
-                <label class="text-xs font-bold uppercase text-slate-500">Result</label>
-                <input v-model="selectedResult" type="text" placeholder="Enter report result" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-sky-500" />
-              </div>
-              <div class="space-y-2">
-                <label class="text-xs font-bold uppercase text-slate-500">Status</label>
-                <select v-model="selectedStatus" class="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 outline-none focus:border-sky-500">
-                  <option value="pending">Pending</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                </select>
-              </div>
-            </div>
-            <div class="mt-5 flex gap-3">
-              <button
-                @click="saveLabReport"
-                class="bg-emerald-500 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all"
-              >
-                <PackageCheck class="w-5 h-5" />
-                Save Report
-              </button>
-              <button @click="selectedReport = null" class="px-6 py-3 rounded-xl font-bold border border-slate-200 text-slate-600 hover:bg-slate-50">
-                Cancel
-              </button>
-            </div>
-          </Card>
         </div>
 
         <div v-else-if="activeTab === 'pharmacy'" class="space-y-6 animate-in slide-in-from-bottom-4 duration-500">
@@ -596,6 +561,73 @@ onMounted(loadData);
           </div>
         </div>
       </main>
+    </div>
+
+    <!-- Edit Lab Test Side Drawer -->
+    <div v-if="showEditLabTestDrawer && selectedReport" class="fixed inset-0 z-50">
+      <!-- Backdrop -->
+      <div @click="showEditLabTestDrawer = false" class="absolute inset-0 bg-black/50 backdrop-blur-sm"></div>
+
+      <!-- Side Drawer -->
+      <div class="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between p-6 border-b border-slate-200 bg-gradient-to-r from-sky-50 to-sky-100">
+          <div>
+            <h3 class="text-xl font-bold text-slate-800">Edit Lab Test</h3>
+            <p class="text-xs text-slate-500 mt-1">{{ selectedReport?.test_name }}</p>
+          </div>
+          <button @click="showEditLabTestDrawer = false" class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+            <X class="w-6 h-6" />
+          </button>
+        </div>
+
+        <!-- Content -->
+        <div class="flex-1 overflow-y-auto p-6">
+          <form @submit.prevent="saveLabReport" class="space-y-6">
+            <!-- Test Info -->
+            <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <p class="text-xs text-slate-500 font-bold uppercase tracking-wider mb-3">Test Details</p>
+              <div class="space-y-2">
+                <div>
+                  <p class="text-xs text-slate-400">Test Name</p>
+                  <p class="font-semibold text-slate-800">{{ selectedReport?.test_name }}</p>
+                </div>
+                <div>
+                  <p class="text-xs text-slate-400">Patient ID</p>
+                  <p class="font-semibold text-slate-800">#{{ selectedReport?.patient_id }}</p>
+                </div>
+                <div v-if="selectedReport?.created_at">
+                  <p class="text-xs text-slate-400">Ordered Date</p>
+                  <p class="font-semibold text-slate-800">{{ new Date(selectedReport.created_at).toLocaleDateString() }}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Status -->
+            <div class="space-y-2">
+              <label class="text-sm font-bold text-slate-700">Status</label>
+              <select v-model="selectedStatus" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500/20 outline-none font-medium" required>
+                <option value="pending">🟡 Pending</option>
+                <option value="in_progress">🔵 In Progress</option>
+                <option value="completed">✅ Completed</option>
+              </select>
+            </div>
+
+            <!-- Result -->
+            <div class="space-y-2">
+              <label class="text-sm font-bold text-slate-700">Test Result</label>
+              <textarea v-model="selectedResult" placeholder="Enter test result (e.g., High, Normal, Low, or detailed findings)" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-sky-500/20 outline-none resize-none" rows="4"></textarea>
+              <p class="text-xs text-slate-400">Describe the test findings or result values</p>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" class="w-full py-4 px-6 bg-gradient-to-r from-sky-500 to-sky-600 text-white font-bold rounded-xl hover:from-sky-600 hover:to-sky-700 transition-all shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2">
+              <Edit class="w-4 h-4" />
+              Update Lab Test
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
 
     <!-- Logout Confirmation Modal -->

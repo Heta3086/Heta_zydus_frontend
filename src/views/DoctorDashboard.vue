@@ -67,6 +67,7 @@ const handleTabChange = (tab: string) => {
   if (tab !== 'consultation') {
     manualPrescription.value = {
       name: '',
+      selectedOption: '',
       category: 'Manual',
       dosage: '1-0-1',
       duration: '5 Days',
@@ -135,6 +136,8 @@ onMounted(() => {
   fetchData();
 });
 
+
+
 const filteredAppointments = computed(() => {
   if (!searchQuery.value) return appointments.value;
   const query = searchQuery.value.toLowerCase();
@@ -160,7 +163,7 @@ const filteredAppointments = computed(() => {
   });
 });
 
-const activeAppointments = computed(() => appointments.value.filter((a) => ['confirmed', 'in_progress'].includes(String(a.status || '').toLowerCase())));
+const activeAppointments = computed(() => appointments.value.filter((a) => ['confirmed', 'in_progress', 'cancelled'].includes(String(a.status || '').toLowerCase())));
 
 const getLocalISODate = (date: Date) => {
   const year = date.getFullYear();
@@ -204,6 +207,27 @@ const normalizeAppointmentDate = (value: string) => {
   }
 
   return '';
+};
+
+const formatTime12Hour = (timeString: string) => {
+  if (!timeString) return '';
+  
+  const time = String(timeString).trim();
+  const match = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  
+  if (!match) return time;
+  
+  let hours = parseInt(match[1]);
+  const minutes = match[2];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  
+  if (hours > 12) {
+    hours -= 12;
+  } else if (hours === 0) {
+    hours = 12;
+  }
+  
+  return `${hours}:${minutes} ${ampm}`;
 };
 
 const todaysAppointments = computed(() => {
@@ -451,6 +475,7 @@ const consultationForm = ref({
 
 const manualPrescription = ref({
   name: '',
+  selectedOption: '',
   category: 'Manual',
   dosage: '1-0-1',
   duration: '5 Days',
@@ -491,6 +516,16 @@ const getPatientDetailsById = (patientId: number) => {
 };
 
 const addMedicine = (med: any) => {
+  // Check if medicine already exists in prescription
+  const alreadyExists = consultationForm.value.prescription.some(
+    (item) => item.id === med.id || item.name === med.name
+  );
+  
+  if (alreadyExists) {
+    showNotice('This medicine is already in the prescription', 'error');
+    return;
+  }
+  
   consultationForm.value.prescription.push({ ...med, dosage: '1-0-1', duration: '5 Days' });
 };
 
@@ -510,6 +545,7 @@ const addManualPrescription = () => {
 
   manualPrescription.value = {
     name: '',
+    selectedOption: '',
     category: 'Manual',
     dosage: '1-0-1',
     duration: '5 Days',
@@ -560,6 +596,7 @@ const saveConsultation = async () => {
     };
     manualPrescription.value = {
       name: '',
+      selectedOption: '',
       category: 'Manual',
       dosage: '1-0-1',
       duration: '5 Days',
@@ -661,7 +698,7 @@ const saveConsultation = async () => {
                 no: index + 1,
                 patient: a.patient?.name || 'Unknown', 
                 date: a.appointment_date?.split('T')[0] || a.date || '',
-                time: a.appointment_time || a.time || '',
+                time: formatTime12Hour(a.appointment_time || a.time || ''),
                 status: a.status,
                 actions: '',
                 _original: a
@@ -698,16 +735,21 @@ const saveConsultation = async () => {
             </div>
             <Table 
               v-else
-              :headers="['No', 'Patient', 'Date', 'Time', 'Actions']" 
+              :headers="['No', 'Patient', 'Reason', 'Date', 'Time', 'Actions']" 
               :items="doctorRequests.map((a, index) => ({ 
                 no: index + 1,
                 patient: a.patient?.name || 'Unknown',
+                reason: a.reason || 'No reason specified',
                 date: a.appointment_date?.split('T')[0] || a.date || '',
-                time: a.appointment_time || a.time || '',
+                time: formatTime12Hour(a.appointment_time || a.time || ''),
                 actions: '',
-                _id: a.id || a.appointment_id
+                _id: a.id || a.appointment_id,
+                _original: a
               }))"
             >
+              <template #cell-reason="{ value }">
+                <div class="max-w-xs text-sm text-slate-600">{{ value }}</div>
+              </template>
               <template #cell-actions="{ item }">
                 <div class="flex gap-2">
                   <button 
@@ -739,29 +781,39 @@ const saveConsultation = async () => {
             </div>
             <Table 
               v-else
-              :headers="['No', 'Patient', 'Date', 'Time', 'Status', 'Actions']" 
+              :headers="['No', 'Patient', 'Date', 'Time', 'Status', 'Reason', 'Actions']" 
               :items="activeAppointments.map((a, index) => ({ 
                 no: index + 1,
                 patient: a.patient?.name || 'Unknown',
                 date: a.appointment_date?.split('T')[0] || a.date || '',
-                time: a.appointment_time || a.time || '',
+                time: formatTime12Hour(a.appointment_time || a.time || ''),
                 status: a.status,
+                reason: a.reason || 'No reason',
                 actions: '',
                 _original: a
               }))"
             >
               <template #cell-status="{ value }">
-                <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-600">
+                <span :class="[
+                  'px-3 py-1 rounded-full text-xs font-bold',
+                  value === 'cancelled' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
+                ]">
                   {{ value }}
                 </span>
               </template>
+              <template #cell-reason="{ value }">
+                <div class="max-w-xs text-sm text-slate-600">{{ value }}</div>
+              </template>
               <template #cell-actions="{ item }">
                 <button 
+                  v-if="item._original.status !== 'cancelled'"
                   @click="startConsultation(item._original)"
                   class="bg-sky-500 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-sky-600 transition-all"
                 >
                   Consult
                 </button>
+                <span v-if="item._original.status === 'completed'" class="text-xs text-green-600 font-bold">✓ Bill Generated</span>
+                <span v-else-if="item._original.status === 'cancelled'" class="text-xs text-red-600 font-bold">Cancelled</span>
               </template>
             </Table>
           </Card>
@@ -902,15 +954,16 @@ const saveConsultation = async () => {
                     <p class="text-xs font-bold uppercase tracking-wider text-sky-700">Add Manual Prescription</p>
                     <div class="space-y-3">
                       <div>
-                        <label class="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 block">Medicine Name</label>
+                        <label class="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2 block">Select Medicine Name</label>
                         <select
-                          v-model="manualPrescription.name"
+                          v-model="manualPrescription.selectedOption"
                           @change="(e: any) => {
                             if (e.target.value === 'Others') {
                               manualPrescription.isOtherMedicine = true;
                               manualPrescription.name = '';
                             } else {
                               manualPrescription.isOtherMedicine = false;
+                              manualPrescription.name = e.target.value;
                             }
                           }"
                           class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm"
@@ -1013,7 +1066,7 @@ const saveConsultation = async () => {
                   </div>
                   <div class="flex justify-between py-2">
                     <span class="text-slate-400 text-sm">Appointment Time</span>
-                    <span class="font-bold text-slate-700">{{ selectedPatient.appointment_time || selectedPatient.time || 'N/A' }}</span>
+                    <span class="font-bold text-slate-700">{{ formatTime12Hour(selectedPatient.appointment_time || selectedPatient.time || '') || 'N/A' }}</span>
                   </div>
                 </div>
               </Card>

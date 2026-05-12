@@ -48,7 +48,8 @@ const showAddPatientModal = ref(false);
 const showEditPatientModal = ref(false);
 const showEditReceptionistModal = ref(false);
 const showEditPharmacistModal = ref(false);
-const showPassword = ref({ doctor: false, receptionist: false, pharmacist: false, patient: false });
+const showEditBillingStaffModal = ref(false);
+const showPassword = ref({ doctor: false, receptionist: false, pharmacist: false, billing: false, patient: false });
 const showEditDoctorModal = ref(false);
 const showEditDeptModal = ref(false);
 const editingDoctor = ref<any>(null);
@@ -56,14 +57,16 @@ const editingPatient = ref<any>(null);
 const editingDepartment = ref<adminAPI.Department | null>(null);
 const editingReceptionist = ref<any>(null);
 const editingPharmacist = ref<any>(null);
+const editingBillingStaff = ref<any>(null);
 const searchQuery = ref('');
 const selectedDepartment = ref<any>(null);
-const selectedMedicalStaffRole = ref<'doctor' | 'receptionist' | 'pharmacist' | null>(null);
+const selectedMedicalStaffRole = ref<'doctor' | 'receptionist' | 'pharmacist' | 'billing' | null>(null);
 
 // Real data from backend
 const doctorsData = ref<adminAPI.Doctor[]>([]);
 const receptionistsData = ref<adminAPI.Receptionist[]>([]);
 const pharmacistsData = ref<adminAPI.Pharmacist[]>([]);
+const billingStaffData = ref<adminAPI.BillingStaff[]>([]);
 const patientsData = ref<adminAPI.Patient[]>([]);
 const appointmentsData = ref<adminAPI.Appointment[]>([]);
 const departmentsData = ref<adminAPI.Department[]>([]);
@@ -106,6 +109,7 @@ const loadData = async () => {
       adminAPI.getDoctors(),
       adminAPI.getReceptionists(),
       adminAPI.getPharmacists(),
+      adminAPI.getBillingStaff(),
       adminAPI.getPatients(),
       adminAPI.getAppointments(),
       adminAPI.getDepartments(),
@@ -115,7 +119,7 @@ const loadData = async () => {
       adminAPI.getFloorNumbers(),
     ]);
 
-    const [doctorsRes, receptionistsRes, pharmacistsRes, patientsRes, appointmentsRes, deptsRes, deptOverviewRes, pharmacyRes, labRes, floorsRes] = results;
+    const [doctorsRes, receptionistsRes, pharmacistsRes, billingRes, patientsRes, appointmentsRes, deptsRes, deptOverviewRes, pharmacyRes, labRes, floorsRes] = results;
     const failedSections: string[] = [];
 
     if (doctorsRes.status === 'fulfilled') doctorsData.value = doctorsRes.value;
@@ -126,6 +130,9 @@ const loadData = async () => {
 
     if (pharmacistsRes.status === 'fulfilled') pharmacistsData.value = pharmacistsRes.value;
     else failedSections.push('Pharmacists');
+
+    if (billingRes.status === 'fulfilled') billingStaffData.value = billingRes.value;
+    else failedSections.push('Billing Staff');
 
     if (patientsRes.status === 'fulfilled') patientsData.value = patientsRes.value;
     else failedSections.push('Patients');
@@ -667,6 +674,21 @@ const addMedicalStaff = async () => {
         }),
       );
       showNotice('success', `Pharmacist ${newMedicalStaff.value.name} created successfully`);
+    } else if (selectedMedicalStaffRole.value === 'billing') {
+      await adminAPI.createBillingStaff({
+        name: newMedicalStaff.value.name,
+        email: newMedicalStaff.value.email,
+        password: newMedicalStaff.value.password,
+      });
+      localStorage.setItem(
+        'heta_last_created_user_login',
+        JSON.stringify({
+          email: newMedicalStaff.value.email,
+          password: newMedicalStaff.value.password,
+          role: 'billing',
+        }),
+      );
+      showNotice('success', `Billing Staff ${newMedicalStaff.value.name} created successfully`);
     }
 
     await loadData();
@@ -834,6 +856,47 @@ const deletePharmacistConfirm = async (pharmacist: adminAPI.Pharmacist) => {
       showNotice('success', `Pharmacist ${pharmacist.name} deleted successfully`);
     } catch (err) {
       showNotice('error', err instanceof Error ? err.message : 'Failed to delete pharmacist');
+    }
+  }
+};
+
+const openEditBillingStaff = (billingStaff: adminAPI.BillingStaff) => {
+  editingBillingStaff.value = { ...billingStaff };
+  showEditBillingStaffModal.value = true;
+};
+
+const updateBillingStaff = async () => {
+  if (!editingBillingStaff.value?.id) {
+    return;
+  }
+
+  if (!editingBillingStaff.value.name || !editingBillingStaff.value.email) {
+    showNotice('error', 'Please fill all fields');
+    return;
+  }
+
+  try {
+    await adminAPI.updateBillingStaff(editingBillingStaff.value.id, {
+      name: editingBillingStaff.value.name,
+      email: editingBillingStaff.value.email,
+    });
+    await loadData();
+    showNotice('success', `Billing Staff ${editingBillingStaff.value.name} updated successfully`);
+    showEditBillingStaffModal.value = false;
+    editingBillingStaff.value = null;
+  } catch (err) {
+    showNotice('error', err instanceof Error ? err.message : 'Failed to update billing staff');
+  }
+};
+
+const deleteBillingStaffConfirm = async (billingStaff: adminAPI.BillingStaff) => {
+  if (confirm(`Are you sure you want to delete billing staff ${billingStaff.name}?`)) {
+    try {
+      await adminAPI.deleteBillingStaff(billingStaff.id);
+      await loadData();
+      showNotice('success', `Billing Staff ${billingStaff.name} deleted successfully`);
+    } catch (err) {
+      showNotice('error', err instanceof Error ? err.message : 'Failed to delete billing staff');
     }
   }
 };
@@ -1018,7 +1081,7 @@ const deletePharmacistConfirm = async (pharmacist: adminAPI.Pharmacist) => {
           <div class="flex items-center justify-between">
             <div>
               <h2 class="text-2xl font-bold text-slate-800">Medical Staff</h2>
-              <p class="text-slate-400 text-sm">Manage doctors, receptionists, and pharmacists</p>
+              <p class="text-slate-400 text-sm">Manage doctors, receptionists, pharmacists, and billing staff</p>
             </div>
             <div v-if="props.role === 'admin'" class="flex items-center gap-3">
               <button
@@ -1177,6 +1240,57 @@ const deletePharmacistConfirm = async (pharmacist: adminAPI.Pharmacist) => {
                     </button>
                     <button
                       @click="deletePharmacistConfirm(item._original)"
+                      class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 hover:bg-red-100 transition-all flex items-center gap-1"
+                    >
+                      <Trash2 class="w-3.5 h-3.5" />
+                      Delete
+                    </button>
+                  </div>
+                </template>
+              </Table>
+            </Card>
+          </div>
+
+          <!-- Billing Staff Section -->
+          <div class="space-y-4">
+            <div class="flex items-center gap-3 pb-3 border-b-2 border-indigo-200">
+              <div class="w-10 h-10 bg-indigo-50 rounded-lg flex items-center justify-center">
+                <CreditCard class="w-6 h-6 text-indigo-600" />
+              </div>
+              <div>
+                <h3 class="text-lg font-bold text-slate-800">Billing Staff</h3>
+                <p class="text-xs text-slate-400">{{ billingStaffData.length }} billing staff</p>
+              </div>
+            </div>
+            <Card>
+              <div v-if="loading" class="text-center py-8">
+                <p class="text-slate-400">Loading billing staff...</p>
+              </div>
+              <div v-else-if="billingStaffData.length === 0" class="text-center py-8">
+                <p class="text-slate-400">No billing staff added yet</p>
+              </div>
+              <Table
+                v-else
+                :items="billingStaffData.map((b, index) => ({ 
+                  no: index + 1, 
+                  name: b.name, 
+                  email: b.email,
+                  actions: '',
+                  _original: b
+                }))"
+                :headers="['No', 'Name', 'Email', 'Actions']"
+              >
+                <template #cell-actions="{ item }">
+                  <div class="flex items-center gap-2">
+                    <button
+                      @click="openEditBillingStaff(item._original)"
+                      class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 text-sky-600 hover:bg-sky-100 transition-all flex items-center gap-1"
+                    >
+                      <Edit class="w-3.5 h-3.5" />
+                      Edit
+                    </button>
+                    <button
+                      @click="deleteBillingStaffConfirm(item._original)"
                       class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 hover:bg-red-100 transition-all flex items-center gap-1"
                     >
                       <Trash2 class="w-3.5 h-3.5" />
@@ -1536,12 +1650,12 @@ const deletePharmacistConfirm = async (pharmacist: adminAPI.Pharmacist) => {
           <!-- Step 2: Role Selection -->
           <div class="space-y-2">
             <label class="text-sm font-bold text-slate-700">Select Role</label>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 @click="selectedMedicalStaffRole = 'doctor'"
                 :class="[
-                  'p-3 rounded-xl border-2 font-semibold text-sm transition-all',
+                  'px-4 py-3 rounded-xl border-2 font-semibold text-base transition-all whitespace-nowrap',
                   selectedMedicalStaffRole === 'doctor'
                     ? 'border-sky-500 bg-sky-50 text-sky-700'
                     : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-sky-300'
@@ -1553,7 +1667,7 @@ const deletePharmacistConfirm = async (pharmacist: adminAPI.Pharmacist) => {
                 type="button"
                 @click="selectedMedicalStaffRole = 'receptionist'"
                 :class="[
-                  'p-3 rounded-xl border-2 font-semibold text-sm transition-all',
+                  'px-4 py-3 rounded-xl border-2 font-semibold text-base transition-all whitespace-nowrap',
                   selectedMedicalStaffRole === 'receptionist'
                     ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
                     : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-emerald-300'
@@ -1565,13 +1679,25 @@ const deletePharmacistConfirm = async (pharmacist: adminAPI.Pharmacist) => {
                 type="button"
                 @click="selectedMedicalStaffRole = 'pharmacist'"
                 :class="[
-                  'p-3 rounded-xl border-2 font-semibold text-sm transition-all',
+                  'px-4 py-3 rounded-xl border-2 font-semibold text-base transition-all whitespace-nowrap',
                   selectedMedicalStaffRole === 'pharmacist'
                     ? 'border-amber-500 bg-amber-50 text-amber-700'
                     : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-amber-300'
                 ]"
               >
                 Pharmacist
+              </button>
+              <button
+                type="button"
+                @click="selectedMedicalStaffRole = 'billing'"
+                :class="[
+                  'px-4 py-3 rounded-xl border-2 font-semibold text-base transition-all whitespace-nowrap',
+                  selectedMedicalStaffRole === 'billing'
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-indigo-300'
+                ]"
+              >
+                Billing
               </button>
             </div>
           </div>
@@ -1661,14 +1787,16 @@ const deletePharmacistConfirm = async (pharmacist: adminAPI.Pharmacist) => {
             type="submit"
             :disabled="!selectedMedicalStaffRole"
             :class="[
-              'w-full py-4 font-bold rounded-xl transition-all shadow-lg',
+              'w-full py-4 font-bold rounded-xl transition-all shadow-lg text-white',
               selectedMedicalStaffRole === 'doctor'
-                ? 'bg-sky-500 text-white hover:bg-sky-600 shadow-sky-500/20 disabled:bg-slate-300'
+                ? 'bg-sky-500 hover:bg-sky-600 shadow-sky-500/20 disabled:bg-slate-300 disabled:cursor-not-allowed'
                 : selectedMedicalStaffRole === 'receptionist'
-                ? 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-emerald-500/20 disabled:bg-slate-300'
+                ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20 disabled:bg-slate-300 disabled:cursor-not-allowed'
                 : selectedMedicalStaffRole === 'pharmacist'
-                ? 'bg-amber-500 text-white hover:bg-amber-600 shadow-amber-500/20 disabled:bg-slate-300'
-                : 'bg-slate-300 text-white cursor-not-allowed'
+                ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20 disabled:bg-slate-300 disabled:cursor-not-allowed'
+                : selectedMedicalStaffRole === 'billing'
+                ? 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20 disabled:bg-slate-300 disabled:cursor-not-allowed'
+                : 'bg-slate-300 cursor-not-allowed'
             ]"
           >
             {{ selectedMedicalStaffRole ? `Add ${selectedMedicalStaffRole.charAt(0).toUpperCase() + selectedMedicalStaffRole.slice(1)}` : 'Select a Role First' }}

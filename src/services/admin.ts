@@ -74,6 +74,12 @@ export type Pharmacist = {
   email: string;
 };
 
+export type BillingStaff = {
+  id: number;
+  name: string;
+  email: string;
+};
+
 export type Patient = {
   id: number;
   name: string;
@@ -105,6 +111,12 @@ export type CreateReceptionistPayload = {
 };
 
 export type CreatePharmacistPayload = {
+  name: string;
+  email: string;
+  password: string;
+};
+
+export type CreateBillingStaffPayload = {
   name: string;
   email: string;
   password: string;
@@ -213,6 +225,40 @@ export async function deletePharmacist(id: number): Promise<void> {
 
 export async function updatePharmacist(id: number, data: { name: string; email: string }): Promise<void> {
   await authFetch(`${API_BASE}/admin/pharmacists/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createBillingStaff(payload: CreateBillingStaffPayload): Promise<void> {
+  await authFetch(`${API_BASE}/admin/billing`, {
+    method: 'POST',
+    body: JSON.stringify({
+      name: payload.name,
+      email: payload.email,
+      password: payload.password,
+    }),
+  });
+}
+
+export async function getBillingStaff(): Promise<BillingStaff[]> {
+  try {
+    const data = await authFetch(`${API_BASE}/admin/billing`);
+    return (Array.isArray(data) ? data : (data?.billing || [])) as BillingStaff[];
+  } catch (error) {
+    console.error('Error fetching billing staff:', error);
+    return [];
+  }
+}
+
+export async function deleteBillingStaff(id: number): Promise<void> {
+  await authFetch(`${API_BASE}/admin/billing/${id}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function updateBillingStaff(id: number, data: { name: string; email: string }): Promise<void> {
+  await authFetch(`${API_BASE}/admin/billing/${id}`, {
     method: 'PUT',
     body: JSON.stringify(data),
   });
@@ -487,9 +533,23 @@ export async function getMyBills(): Promise<MyBill[]> {
   return (data?.bills || []) as MyBill[];
 }
 
+export async function getBillDetails(billId: number): Promise<any> {
+  const data = await authFetch(`${API_BASE}/bills/${billId}/details`);
+  return data;
+}
+
 export async function getMyPrescriptions(): Promise<MyPrescription[]> {
   const data = await authFetch(`${API_BASE}/my-prescriptions`);
   return (data?.prescriptions || []) as MyPrescription[];
+}
+
+export async function cancelPatientAppointment(id: number, reason: string): Promise<void> {
+  await authFetch(`${API_BASE}/my-appointments/${id}/cancel`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      cancellation_reason: reason,
+    }),
+  });
 }
 
 export async function acceptAppointment(id: number): Promise<void> {
@@ -705,4 +765,64 @@ export async function updatePatient(id: number, payload: CreatePatientPayload): 
     method: 'PUT',
     body: JSON.stringify(payload),
   });
+}
+
+export type BookPatientAppointmentPayload = {
+  patient_id: number;
+  doctor_id: number;
+  appointment_date: string;
+  appointment_time: string;
+  reason: string;
+};
+
+export async function bookPatientAppointment(payload: BookPatientAppointmentPayload): Promise<void> {
+  await authFetch(`${API_BASE}/receptionist/book-appointment`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+// ===== NEW BILLING FUNCTIONS =====
+
+export type CreateBillPayload = {
+  patient_id: number;
+  appointment_id?: number;
+  amount: number;
+  status?: string;
+  description: string;
+};
+
+export type BillingStaffBill = {
+  bill_id: number;
+  patient_id: number;
+  patient_name: string;
+  appointment_id?: number;
+  amount: number;
+  status: string;
+  description: string;
+  created_at: string;
+};
+
+// Doctor creates a bill
+export async function createBillByDoctor(payload: CreateBillPayload): Promise<{ bill_id: number; message: string }> {
+  const data = await authFetch(`${API_BASE}/doctor/bills`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return data;
+}
+
+// Billing staff gets all bills
+export async function getAllBillsForBillingStaff(): Promise<{ bills: BillingStaffBill[]; summary: any }> {
+  const data = await authFetch(`${API_BASE}/billing/all`);
+  return data;
+}
+
+// Mark bill as paid
+export async function markBillAsPaid(billId: number): Promise<{ message: string }> {
+  const data = await authFetch(`${API_BASE}/bills/${billId}/paid`, {
+    method: 'PUT',
+    body: JSON.stringify({}),
+  });
+  return data;
 }

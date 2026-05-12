@@ -47,6 +47,15 @@ const patientForm = ref({
 
 const showPassword = ref(false);
 
+const bookingTarget = ref<adminAPI.Patient | null>(null);
+const bookingForm = ref({
+  department_id: 0,
+  doctor_id: 0,
+  appointment_date: '',
+  appointment_time: '',
+  reason: '',
+});
+
 const handleTabChange = (tab: string) => {
   activeTab.value = tab;
 };
@@ -79,6 +88,27 @@ const normalizePhone = (value: string) => value.replace(/\D/g, '').trim();
 const onPhoneInput = (event: Event) => {
   const target = event.target as HTMLInputElement;
   patientForm.value.phone = normalizePhone(target.value).slice(0, 10);
+};
+
+const formatTime12Hour = (timeString: string) => {
+  if (!timeString) return '';
+  
+  const time = String(timeString).trim();
+  const match = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  
+  if (!match) return time;
+  
+  let hours = parseInt(match[1]);
+  const minutes = match[2];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  
+  if (hours > 12) {
+    hours -= 12;
+  } else if (hours === 0) {
+    hours = 12;
+  }
+  
+  return `${hours}:${minutes} ${ampm}`;
 };
 
 const loadData = async () => {
@@ -118,6 +148,11 @@ const filteredPatients = computed(() => {
 const filteredDoctors = computed(() => {
   if (!patientForm.value.department_id) return doctors.value;
   return doctors.value.filter((doc) => doc.department_id === patientForm.value.department_id);
+});
+
+const filteredDoctorsForBooking = computed(() => {
+  if (!bookingForm.value.department_id) return [];
+  return doctors.value.filter((doc) => doc.department_id === bookingForm.value.department_id);
 });
 
 const filteredRejectedAppointments = computed(() => {
@@ -249,6 +284,50 @@ const deleteRejected = async (appointment: adminAPI.Appointment) => {
     error.value = err.message || 'Failed to delete rejected appointment';
   }
 };
+
+const openBookingModal = (patient: adminAPI.Patient) => {
+  bookingTarget.value = patient;
+  bookingForm.value = {
+    department_id: 0,
+    doctor_id: 0,
+    appointment_date: '',
+    appointment_time: '',
+    reason: '',
+  };
+};
+
+const closeBookingModal = () => {
+  bookingTarget.value = null;
+};
+
+const submitBookAppointment = async () => {
+  if (!bookingTarget.value) return;
+  if (
+    !bookingForm.value.department_id ||
+    !bookingForm.value.doctor_id ||
+    !bookingForm.value.appointment_date ||
+    !bookingForm.value.appointment_time ||
+    !bookingForm.value.reason
+  ) {
+    showNotice('Please fill all appointment details');
+    return;
+  }
+
+  try {
+    await adminAPI.bookPatientAppointment({
+      patient_id: bookingTarget.value.id,
+      doctor_id: bookingForm.value.doctor_id,
+      appointment_date: bookingForm.value.appointment_date,
+      appointment_time: bookingForm.value.appointment_time,
+      reason: bookingForm.value.reason,
+    });
+    showNotice('Appointment booked successfully');
+    closeBookingModal();
+    await loadData();
+  } catch (err: any) {
+    error.value = err.message || 'Failed to book appointment';
+  }
+};
 </script>
 
 <template>
@@ -279,9 +358,18 @@ const deleteRejected = async (appointment: adminAPI.Appointment) => {
           <h2 class="text-2xl font-bold text-slate-800">All Patients</h2>
           <Card title="Patient List" subtitle="All registered patients" :icon="Users">
             <Table
-              :headers="['No', 'Name', 'Phone', 'Gender', 'Blood Group']"
-              :items="filteredPatients.map((p, index) => ({ no: index + 1, name: p.name || 'Unknown', phone: p.phone || 'N/A', gender: p.gender || 'N/A', blood_type: p.blood_type || 'N/A' }))"
-            />
+              :headers="['No', 'Name', 'Phone', 'Gender', 'Blood Group', 'Actions']"
+              :items="filteredPatients.map((p, index) => ({ no: index + 1, name: p.name || 'Unknown', phone: p.phone || 'N/A', gender: p.gender || 'N/A', blood_type: p.blood_type || 'N/A', actions: '', _original: p }))"
+            >
+              <template #actions="{ item }">
+                <button
+                  @click="openBookingModal(item._original)"
+                  class="px-4 py-2 text-xs font-bold rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition-colors"
+                >
+                  Book Appointment
+                </button>
+              </template>
+            </Table>
           </Card>
         </div>
 
@@ -360,7 +448,7 @@ const deleteRejected = async (appointment: adminAPI.Appointment) => {
                 patient: a.patient?.name || 'Unknown',
                 doctor: a.doctor?.name || 'Unknown',
                 date: a.appointment_date?.split('T')[0] || '',
-                time: a.appointment_time || '',
+                time: formatTime12Hour(a.appointment_time || ''),
                 reason: a.reason || '-',
                 actions: '',
                 _original: a,
@@ -407,6 +495,38 @@ const deleteRejected = async (appointment: adminAPI.Appointment) => {
         <div class="flex items-center justify-end gap-2">
           <button @click="closeRescheduleModal" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">Cancel</button>
           <button @click="submitReschedule" class="px-4 py-2 rounded-lg bg-sky-500 text-white font-semibold hover:bg-sky-600">Reschedule</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Book Appointment Modal -->
+    <div v-if="bookingTarget" class="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50">
+      <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4">
+        <h3 class="text-xl font-bold text-slate-800">Book Appointment</h3>
+        <p class="text-sm text-slate-500">
+          Patient: <span class="font-semibold text-slate-700">{{ bookingTarget.name || 'Unknown' }}</span>
+        </p>
+        <div class="space-y-3">
+          <select v-model.number="bookingForm.department_id" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl" required>
+            <option :value="0" disabled>Select Department</option>
+            <option v-for="dept in departments" :key="dept.id" :value="dept.id">{{ dept.name }}</option>
+          </select>
+          <select v-model.number="bookingForm.doctor_id" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl" required>
+            <option :value="0" disabled>Select Doctor</option>
+            <option v-for="doc in filteredDoctorsForBooking" :key="doc.id" :value="doc.id">{{ doc.name }} - {{ doc.specialization }}</option>
+          </select>
+          <input v-model="bookingForm.appointment_date" type="date" :min="minDate" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl" />
+          <input v-model="bookingForm.appointment_time" type="time" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl" />
+          <textarea
+            v-model="bookingForm.reason"
+            rows="2"
+            placeholder="Reason for appointment"
+            class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
+          ></textarea>
+        </div>
+        <div class="flex items-center justify-end gap-2">
+          <button @click="closeBookingModal" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button @click="submitBookAppointment" class="px-4 py-2 rounded-lg bg-sky-500 text-white font-semibold hover:bg-sky-600">Book Appointment</button>
         </div>
       </div>
     </div>

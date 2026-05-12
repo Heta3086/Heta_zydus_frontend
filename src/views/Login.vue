@@ -19,7 +19,7 @@ const normalizeRole = (value: string) => {
   return role;
 };
 
-const allowedRoles = new Set(['admin', 'doctor', 'pharmacy', 'receptionist', 'patient']);
+const allowedRoles = new Set(['admin', 'doctor', 'pharmacy', 'receptionist', 'patient', 'billing']);
 
 const handleLogin = async () => {
   if (!email.value || !password.value) return;
@@ -37,7 +37,7 @@ const handleLogin = async () => {
     }
 
     if (!allowedRoles.has(role)) {
-      throw new Error('Only admin, doctor, pharmacy, receptionist, and patient can login here.');
+      throw new Error('Only admin, doctor, pharmacy, receptionist, patient, and billing can login here.');
     }
 
     emit('login', login.token, role);

@@ -48,6 +48,15 @@ const bookingForm = ref({
   reason: '',
 });
 
+const cancelTarget = ref<MyAppointment | null>(null);
+const cancelForm = ref({
+  reason: '',
+});
+
+const selectedBillDetails = ref<any>(null);
+const billDetailsLoading = ref(false);
+const selectedHistoryAppointment = ref<MyAppointment | null>(null);
+
 const formatDate = (value?: string) => {
   if (!value) return '-';
   const d = new Date(value);
@@ -57,10 +66,23 @@ const formatDate = (value?: string) => {
 
 const formatTime = (value?: string) => {
   if (!value) return '-';
-  const normalized = String(value).slice(0, 8);
-  const d = new Date(`1970-01-01T${normalized}`);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  
+  const time = String(value).trim();
+  const match = time.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  
+  if (!match) return value;
+  
+  let hours = parseInt(match[1]);
+  const minutes = match[2];
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  
+  if (hours > 12) {
+    hours -= 12;
+  } else if (hours === 0) {
+    hours = 12;
+  }
+  
+  return `${hours}:${minutes} ${ampm}`;
 };
 
 const showNotice = (type: 'success' | 'error', text: string) => {
@@ -120,6 +142,10 @@ onMounted(loadData);
 
 const handleTabChange = (tab: string) => {
   activeTab.value = tab;
+  // Clear the highlighted appointment when switching tabs
+  if (tab !== 'history') {
+    selectedHistoryAppointment.value = null;
+  }
 };
 
 const handleSearch = (query: string) => {
@@ -261,6 +287,62 @@ const submitBooking = async () => {
 
 const resetForm = () => {
   bookingForm.value = { department_id: 0, doctor_id: 0, date: '', time: '', reason: '' };
+};
+
+const openCancelModal = (appointment: MyAppointment) => {
+  cancelTarget.value = appointment;
+  cancelForm.value = {
+    reason: '',
+  };
+};
+
+const closeCancelModal = () => {
+  cancelTarget.value = null;
+};
+
+const submitCancelAppointment = async () => {
+  if (!cancelTarget.value) return;
+  if (!cancelForm.value.reason.trim()) {
+    showNotice('error', 'Please provide a reason for cancellation');
+    return;
+  }
+
+  try {
+    await adminAPI.cancelPatientAppointment(cancelTarget.value.id, cancelForm.value.reason);
+    showNotice('success', 'Appointment cancelled successfully');
+    closeCancelModal();
+    await loadData();
+  } catch (err) {
+    showNotice('error', err instanceof Error ? err.message : 'Failed to cancel appointment');
+  }
+};
+
+const openBillDetailsModal = async (bill: MyBill) => {
+  try {
+    billDetailsLoading.value = true;
+    const details = await adminAPI.getBillDetails(bill.bill_id);
+    selectedBillDetails.value = details;
+  } catch (err) {
+    showNotice('error', err instanceof Error ? err.message : 'Failed to load bill details');
+  } finally {
+    billDetailsLoading.value = false;
+  }
+};
+
+const closeBillDetailsModal = () => {
+  selectedBillDetails.value = null;
+};
+
+const viewAppointmentHistory = (appointment: MyAppointment) => {
+  selectedHistoryAppointment.value = appointment;
+  activeTab.value = 'history';
+  // Scroll to highlighted appointment after tab change
+  setTimeout(() => {
+    const element = document.getElementById(`history-appt-${appointment.id}`);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
 };
 </script>
 
@@ -458,8 +540,15 @@ const resetForm = () => {
           <h2 class="text-2xl font-bold text-slate-800">My Appointments</h2>
           <Card>
             <Table
-              :headers="['Doctor', 'Date', 'Time', 'Status']"
-              :items="filteredAppointments.map(a => ({ doctor: a.doctor_name, date: formatDate(a.appointment_date), time: formatTime(a.appointment_time), status: a.status_label }))"
+              :headers="['Doctor', 'Date', 'Time', 'Status', 'Actions']"
+              :items="filteredAppointments.map((a) => ({ 
+                doctor: a.doctor_name, 
+                date: formatDate(a.appointment_date), 
+                time: formatTime(a.appointment_time), 
+                status: a.status_label,
+                actions: '',
+                _original: a
+              }))"
             >
               <template #cell-status="{ value }">
                 <span
@@ -472,6 +561,24 @@ const resetForm = () => {
                   {{ value }}
                 </span>
               </template>
+              <template #actions="{ item }">
+                <div class="flex gap-2">
+                  <button
+                    v-if="item.status !== 'Completed'"
+                    @click="openCancelModal(item._original)"
+                    class="px-3 py-2 text-xs font-bold rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    v-if="item.status === 'Completed'"
+                    @click="viewAppointmentHistory(item._original)"
+                    class="px-3 py-2 text-xs font-bold rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition-colors"
+                  >
+                    View History
+                  </button>
+                </div>
+              </template>
             </Table>
           </Card>
         </div>
@@ -482,14 +589,23 @@ const resetForm = () => {
             <div
               v-for="appt in completedAppointments"
               :key="appt.id"
-              class="bg-white rounded-2xl border border-slate-200 p-6 space-y-4 hover:shadow-lg transition-all"
+              :id="`history-appt-${appt.id}`"
+              :class="[
+                'rounded-2xl p-6 space-y-4 transition-all',
+                selectedHistoryAppointment?.id === appt.id
+                  ? 'bg-sky-50 border-2 border-sky-500 shadow-xl shadow-sky-200'
+                  : 'bg-white border border-slate-200 hover:shadow-lg'
+              ]"
             >
               <div class="flex items-start justify-between pb-4 border-b border-slate-100">
                 <div>
                   <p class="text-sm text-slate-500">{{ formatDate(appt.appointment_date) }} at {{ formatTime(appt.appointment_time) }}</p>
                   <p class="text-xs text-slate-400 mt-1">Appointment ID: {{ appt.id }}</p>
                 </div>
-                <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">{{ normalizeStatus(appt.status) }}</span>
+                <div class="flex flex-col items-end gap-2">
+                  <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700">{{ normalizeStatus(appt.status) }}</span>
+                  <span v-if="selectedHistoryAppointment?.id === appt.id" class="px-3 py-1 rounded-full text-xs font-bold bg-sky-500 text-white animate-pulse">Currently Viewing</span>
+                </div>
               </div>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -666,10 +782,118 @@ const resetForm = () => {
               <div class="mt-4 text-xs text-slate-400">
                 <p>Appointment ID: {{ bill.appointment_id }}</p>
               </div>
+
+              <!-- View Details Button -->
+              <button
+                @click="openBillDetailsModal(bill)"
+                class="w-full mt-4 px-4 py-2 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition-all"
+              >
+                View Details
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bill Details Modal -->
+        <div v-if="selectedBillDetails" class="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50">
+          <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4 max-h-96 overflow-y-auto">
+            <div class="flex justify-between items-center">
+              <h3 class="text-2xl font-bold text-slate-800">Bill Details</h3>
+              <button @click="closeBillDetailsModal" class="text-slate-400 hover:text-slate-600 text-2xl">×</button>
+            </div>
+
+            <!-- Bill Header Info -->
+            <div class="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg">
+              <div>
+                <p class="text-xs text-slate-500">Bill ID</p>
+                <p class="text-lg font-semibold text-slate-800">{{ selectedBillDetails.bill_id }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-slate-500">Status</p>
+                <span
+                  :class="[
+                    'px-3 py-1 rounded-full text-xs font-bold',
+                    String(selectedBillDetails.status).toLowerCase() === 'paid' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+                  ]"
+                >
+                  {{ selectedBillDetails.status }}
+                </span>
+              </div>
+              <div>
+                <p class="text-xs text-slate-500">Date</p>
+                <p class="text-sm text-slate-800">{{ formatDate(selectedBillDetails.created_at) }}</p>
+              </div>
+              <div>
+                <p class="text-xs text-slate-500">Total Amount</p>
+                <p class="text-lg font-bold text-emerald-600">₹{{ (selectedBillDetails.amount / 100).toFixed(2) }}</p>
+              </div>
+            </div>
+
+            <!-- Itemized Charges -->
+            <div v-if="selectedBillDetails.items && selectedBillDetails.items.length > 0">
+              <h4 class="font-semibold text-slate-800 mb-3">Itemized Charges</h4>
+              <div class="space-y-2">
+                <div v-for="item in selectedBillDetails.items" :key="item.item_id" class="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+                  <div>
+                    <p class="font-medium text-slate-800">{{ item.description }}</p>
+                    <p class="text-xs text-slate-500">{{ item.type }}</p>
+                  </div>
+                  <div class="text-right">
+                    <p class="font-semibold text-slate-800">₹{{ (item.total_amount / 100).toFixed(2) }}</p>
+                    <p class="text-xs text-slate-500">{{ item.quantity }} × ₹{{ (item.unit_price / 100).toFixed(2) }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Payments History -->
+            <div v-if="selectedBillDetails.payments && selectedBillDetails.payments.length > 0">
+              <h4 class="font-semibold text-slate-800 mb-3">Payment History</h4>
+              <div class="space-y-2">
+                <div v-for="payment in selectedBillDetails.payments" :key="payment.payment_id" class="p-3 bg-emerald-50 rounded-lg">
+                  <div class="flex justify-between items-center">
+                    <div>
+                      <p class="font-medium text-slate-800">{{ payment.method || 'Unknown Method' }}</p>
+                      <p class="text-xs text-slate-600">{{ formatDate(payment.paid_at) }}</p>
+                    </div>
+                    <p class="font-semibold text-emerald-600">₹{{ (payment.amount / 100).toFixed(2) }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-6">
+              <button
+                @click="closeBillDetailsModal"
+                class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
       </main>
+    </div>
+
+    <!-- Cancel Appointment Modal -->
+    <div v-if="cancelTarget" class="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50">
+      <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 p-6 space-y-4">
+        <h3 class="text-xl font-bold text-slate-800">Cancel Appointment</h3>
+        <p class="text-sm text-slate-500">
+          Doctor: <span class="font-semibold text-slate-700">{{ cancelTarget.doctor?.name || 'Unknown' }}</span>
+          | Date: <span class="font-semibold text-slate-700">{{ formatDate(cancelTarget.appointment_date) }}</span>
+        </p>
+        <textarea
+          v-model="cancelForm.reason"
+          rows="4"
+          placeholder="Please provide a reason for cancellation..."
+          class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl"
+        ></textarea>
+        <div class="flex items-center justify-end gap-2">
+          <button @click="closeCancelModal" class="px-4 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50">Keep Appointment</button>
+          <button @click="submitCancelAppointment" class="px-4 py-2 rounded-lg bg-red-500 text-white font-semibold hover:bg-red-600">Cancel Appointment</button>
+        </div>
+      </div>
     </div>
 
     <!-- Logout Confirmation Modal -->

@@ -7,6 +7,7 @@ import DoctorDashboard from './views/DoctorDashboard.vue';
 import ReceptionistDashboard from './views/ReceptionistDashboard.vue';
 import PharmacyDashboard from './views/PharmacyDashboard.vue';
 import PatientDashboard from './views/PatientDashboard.vue';
+import BillingDashboard from './views/BillingDashboard.vue';
 import { logoutUser, fetchProfile } from './services/auth';
 
 const token = ref<string | null>(null);
@@ -109,5 +110,6 @@ onMounted(() => {
   <ReceptionistDashboard v-else-if="token && role === 'receptionist'" :userName="userName" @logout="onLogout" />
   <PharmacyDashboard v-else-if="token && role === 'pharmacy'" :userName="userName" @logout="onLogout" />
   <PatientDashboard v-else-if="token && role === 'patient'" :userName="userName" @logout="onLogout" />
+  <BillingDashboard v-else-if="token && role === 'billing'" :userName="userName" @logout="onLogout" />
   <AdminDashboard v-else :role="role || 'admin'" :userName="userName" @logout="onLogout" />
 </template>

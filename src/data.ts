@@ -6,9 +6,9 @@ export const departments = [
 ];
 
 export const doctors = [
-  { id: 1, name: 'Dr. John Smith', department: 'Cardiology', email: 'john.smith@zydus.com', experience: '15 Years' },
-  { id: 2, name: 'Dr. Sarah Wilson', department: 'Neurology', email: 'sarah.wilson@zydus.com', experience: '12 Years' },
-  { id: 3, name: 'Dr. Michael Brown', department: 'Orthopedic', email: 'michael.brown@zydus.com', experience: '18 Years' },
+  { id: 1, name: 'Dr. John Smith', department: 'Cardiology', email: 'john.smith@zydus.com', experience: '15 Years', fee: 500 },
+  { id: 2, name: 'Dr. Sarah Wilson', department: 'Neurology', email: 'sarah.wilson@zydus.com', experience: '12 Years', fee: 600 },
+  { id: 3, name: 'Dr. Michael Brown', department: 'Orthopedic', email: 'michael.brown@zydus.com', experience: '18 Years', fee: 550 },
 ];
 
 export const patients = [
@@ -30,8 +30,8 @@ export const medicines = [
 ];
 
 export const bills = [
-  { id: 1, patient: 'Robert Johnson', date: '2026-03-24', amount: 4500, status: 'Paid' },
-  { id: 2, patient: 'Maria Garcia', date: '2026-03-24', amount: 1200, status: 'Unpaid' },
+  { id: 1, patient: 'Robert Johnson', doctor: 'Dr. John Smith', date: '2026-03-24', consultationFee: 500, medicineCharges: 2000, labTestFees: 2000, amount: 4500, status: 'Paid' },
+  { id: 2, patient: 'Maria Garcia', doctor: 'Dr. Sarah Wilson', date: '2026-03-24', consultationFee: 600, medicineCharges: 400, labTestFees: 200, amount: 1200, status: 'Unpaid' },
 ];
 
 export const orders = [
